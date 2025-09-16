@@ -25,5 +25,5 @@ def extract_text_from_file (file_bytes: bytes, file_name : str) -> str:
 
        try:
               return file_bytes.decode("utf-8", errors="ignore")
-       except Exception:
-              return ""
+       except Exception as e:
+        return f"خطا در رمزگشایی فایل: {str(e)}"
