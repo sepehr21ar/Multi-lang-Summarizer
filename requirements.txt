@@ -1,0 +1,9 @@
+langchain
+langchain-community
+langchain-core
+langchain-cohere
+cohere
+gradio
+python-dotenv
+docx2txt
+pypdf
