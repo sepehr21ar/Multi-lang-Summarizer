@@ -1,15 +1,14 @@
-from typing import Any, Dict, List
+from typing import List
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.documents import Document
 from langchain_cohere import ChatCohere
 from langchain.chains.summarize import load_summarize_chain
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from cohere.core.api_error import ApiError
 from dotenv import load_dotenv
 import os
 import logging
-import time
 import tiktoken  
+
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
@@ -20,6 +19,7 @@ def num_tokens_from_string(string: str, encoding_name: str = "cl100k_base") -> i
     encoding = tiktoken.get_encoding(encoding_name)
     return len(encoding.encode(string))
 
+
 class AdvancedSummarizer:
     def __init__(self):
         self.llm = None
@@ -27,15 +27,12 @@ class AdvancedSummarizer:
     
     def initialize_llm(self):
         """Initialize the language model"""
-        if not os.environ.get("COHERE_API_KEY"):
-            api_key = input("لطفاً کلید API Cohere را وارد کنید: ").strip()
-            if not api_key:
-                raise ValueError("کلید API ضروری است")
-            os.environ["COHERE_API_KEY"] = api_key
-        
-        # در initialize_llm تغییر دهید:
+        api_key = os.environ.get("COHERE_API_KEY")
+        if not api_key:
+            raise ValueError("⚠️ COHERE_API_KEY تنظیم نشده است (در Hugging Face Secrets اضافه کنید).")
+
         self.llm = ChatCohere(
-            model="command-a-03-2025",  # مدل بزرگ‌تر
+            model="command-a-03-2025",
             temperature=0.1,
             max_tokens=4000
         )
@@ -43,7 +40,7 @@ class AdvancedSummarizer:
     def smart_text_split(self, text: str, max_tokens: int = 3500) -> List[Document]:
         """تقسیم هوشمندانه متن با در نظر گرفتن محدودیت توکن"""
         splitter = RecursiveCharacterTextSplitter(
-            chunk_size=900,  # افزایش chunk_size
+            chunk_size=900,
             chunk_overlap=200,
             length_function=num_tokens_from_string,
             separators=["\n\n", "\n", " ", ""]
@@ -117,6 +114,7 @@ class AdvancedSummarizer:
         })
         
         return result["output_text"]
+
 
 # نمونه اصلی
 summarizer = AdvancedSummarizer()

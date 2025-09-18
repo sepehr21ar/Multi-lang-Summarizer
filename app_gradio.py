@@ -155,6 +155,7 @@ with gr.Blocks(css=css, title="خلاصه‌ساز هوشمند") as demo:
         outputs=[output_summary, extracted_text_display]
     )
 
+
 # راه‌اندازی سرور
 if __name__ == "__main__":
     demo.launch(
