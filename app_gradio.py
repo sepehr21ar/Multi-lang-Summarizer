@@ -1,24 +1,23 @@
 import gradio as gr
 from summarizer import summarize_text
-from file_utils import extract_text_from_file
+from file_utils import extract_text_from_file # 💡 اطمینان از وارد کردن صحیح 'utils'
 import os
 import time
 
-# تنظیمات پروکسی اگر نیاز باشد
+# تنظیمات پروکسی اگر نیاز باشد (مانند نمونه اصلی شما)
 # os.environ["HTTP_PROXY"] = "http://127.0.0.1:1080"
 # os.environ["HTTPS_PROXY"] = "http://127.0.0.1:1080"
-os.environ["NO_PROXY"] = "127.0.0.1,localhost"
+# os.environ["NO_PROXY"] = "127.0.0.1,localhost"
 
 # نگاشت زبان‌ها برای نمایش بهتر
 LANGUAGE_DISPLAY = {
     "english": "🇺🇸 English",
-    "persian": "🇮🇷 فارسی", 
+    "persian": "🇮🇷 فارسی",
     "french": "🇫🇷 Français",
     "german": "🇩🇪 Deutsch",
     "spanish": "🇪🇸 Español",
     "arabic": "🇸🇦 العربية"
 }
-
 LANGUAGE_VALUES = {
     "🇺🇸 English": "english",
     "🇮🇷 فارسی": "persian",
@@ -27,37 +26,43 @@ LANGUAGE_VALUES = {
     "🇪🇸 Español": "spanish",
     "🇸🇦 العربية": "arabic"
 }
-
-def process_input(file_bytes, text_input, language_display, progress=gr.Progress()):
-    """پردازش ورودی و تولید خلاصه"""
+def process_input(file_path, text_input, language_display, progress=gr.Progress()):
     extracted_text = ""
-    
-    # تبدیل نمایش زبان به مقدار واقعی
+
     language = LANGUAGE_VALUES.get(language_display, "persian")
-    
-    # نمایش پیشرفت
+
     progress(0.1, desc="در حال بررسی ورودی...")
-    
-    if file_bytes:
+
+    if file_path:
         progress(0.3, desc="در حال استخراج متن از فایل...")
-        extracted_text = extract_text_from_file(file_bytes, "uploaded_file")
+
+        # خواندن بایت‌ها
+        with open(file_path, "rb") as f:
+            file_bytes = f.read()
+
+        file_name = os.path.basename(file_path)
+
+        extracted_text = extract_text_from_file(file_bytes, file_name)
+
     elif text_input and text_input.strip():
         extracted_text = text_input.strip()
+
     else:
         return "❌ لطفاً فایل یا متن وارد کنید.", ""
 
+    # بررسی خطا
     if not extracted_text or extracted_text.startswith("⚠️") or extracted_text.startswith("❌"):
         return extracted_text, extracted_text
 
     try:
         progress(0.6, desc="در حال خلاصه‌سازی...")
         summary = summarize_text(extracted_text, language=language)
-        
+
         progress(0.9, desc="در حال آماده‌سازی نتیجه...")
-        time.sleep(0.5)  # برای نمایش بهتر پیشرفت
-        
+        time.sleep(0.5)
+
         return summary.strip(), extracted_text
-        
+
     except Exception as e:
         return f"⚠️ خطا در پردازش: {str(e)}", extracted_text
 
@@ -75,20 +80,20 @@ h1 {
 with gr.Blocks(css=css, title="خلاصه‌ساز هوشمند") as demo:
     gr.Markdown("""
     # 🌍 خلاصه‌ساز چندزبانه هوشمند
-    **متن یا فایل خود را وارد کنید و خلاصه‌ای حرفه‌ای دریافت کنید**
+    متن یا فایل خود را وارد کنید و خلاصه‌ای حرفه‌ای دریافت کنید
     
-    **پشتیبانی از فایل‌ها:** PDF, Word, Text, CSV, Markdown
-    """)
-    
+    **پشتیبانی از فایل‌ها:** PDF, Word, Text, CSV, Markdown""")
+
     with gr.Row():
         with gr.Column(scale=1):
             gr.Markdown("### 📤 ورودی")
             
             file_input = gr.File(
-                label="آپلود فایل",
-                file_types=[".pdf", ".docx", ".csv", ".txt", ".md", ".rtf"],
-                type="binary"
-            )
+    label="آپلود فایل",
+    file_types=[".pdf", ".docx", ".csv", ".txt", ".md"],
+    type="filepath"
+)
+
             
             text_input = gr.Textbox(
                 label="یا متن خود را وارد کنید",
@@ -143,25 +148,40 @@ with gr.Blocks(css=css, title="خلاصه‌ساز هوشمند") as demo:
         outputs=[output_summary, extracted_text_display],
         show_progress="full"
     )
-    
-    # رویدادهای clear
+
+    # رویدادهای clear: با تغییر ورودی‌ها، خروجی‌ها پاک شوند
     file_input.change(
         lambda: ("", ""),
-        outputs=[output_summary, extracted_text_display]
+        outputs=[output_summary, extracted_text_display],
+        # اطمینان از اینکه اگر فقط متن وجود دارد، فایل آن را پاک نکند.
+        # اما در اینجا برای سادگی، هر تغییر هر دو خروجی را پاک می‌کند.
+        
     )
-    
+
     text_input.change(
         lambda: ("", ""),
         outputs=[output_summary, extracted_text_display]
     )
 
-
 # راه‌اندازی سرور
 if __name__ == "__main__":
-    demo.launch(
-        server_name="0.0.0.0",
-        server_port=7840,
-        share=False,
-        show_api=False,
-        inbrowser=True
-    )
+    try:
+        import os
+
+        os.environ["NO_PROXY"] = "127.0.0.1,localhost"
+        os.environ["no_proxy"] = "127.0.0.1,localhost"
+
+        demo.launch(
+    server_name="0.0.0.0",
+    server_port=7860,
+    share=False,
+    show_api=False,
+    inbrowser=True  
+)
+
+
+
+
+
+    finally:
+        print("Done")

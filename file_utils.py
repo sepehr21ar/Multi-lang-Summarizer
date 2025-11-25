@@ -3,15 +3,17 @@ import tempfile
 import os
 import logging
 
-# تنظیمات لاگینگ
+# 💡 حذف وابستگی‌های OCR: pytesseract و pdf2image دیگر لازم نیستند.
+
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# استفاده از __name__ یک روش بهتر برای نام‌گذاری logger است.
+logger = logging.getLogger(__name__) 
 
 def extract_text_from_file(file_bytes: bytes, file_name: str) -> str:
     """Extract text from a file using LangChain loaders where possible."""
     if not file_bytes:
         return "⚠️ فایل خالی است."
-    
+
     fname = file_name.lower()
     suffix = "." + fname.split(".")[-1] if "." in fname else ""
 
@@ -24,6 +26,7 @@ def extract_text_from_file(file_bytes: bytes, file_name: str) -> str:
     }
 
     if suffix in loader_map:
+        # برای لودرها، فایل موقت ایجاد می‌کنیم.
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             tmp.write(file_bytes)
             tmp_path = tmp.name
@@ -33,10 +36,14 @@ def extract_text_from_file(file_bytes: bytes, file_name: str) -> str:
             loader = loader_fn(tmp_path)
             docs = loader.load()
             
+            # 💡 بهبود: حذف کامل بخش OCR برای PDF
             if not docs:
-                return "⚠️ هیچ متنی پیدا نشد."
-                
-            # حذف صفحات خالی
+                if suffix == ".pdf":
+                     # اگر PyPDFLoader متنی پیدا نکرد، فرض می‌کنیم PDF اسکن شده است.
+                     return "⚠️ فایل PDF متنی نیست یا خالی است. پشتیبانی از PDF اسکن شده (OCR) غیرفعال است."
+                else:
+                    return "⚠️ هیچ متنی پیدا نشد."
+                    
             contents = [d.page_content.strip() for d in docs if d.page_content.strip()]
             return "\n\n".join(contents)
             
@@ -49,7 +56,6 @@ def extract_text_from_file(file_bytes: bytes, file_name: str) -> str:
 
     # fallback برای فایل‌های دیگر
     try:
-        # امتحان چندین encoding مختلف
         encodings = ['utf-8', 'utf-8-sig', 'latin-1', 'cp1256']
         for encoding in encodings:
             try:

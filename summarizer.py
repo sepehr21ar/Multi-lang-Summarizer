@@ -7,24 +7,25 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from dotenv import load_dotenv
 import os
 import logging
-import tiktoken  
-
+import tiktoken
 load_dotenv()
+print("API:", os.environ.get("COHERE_API_KEY"))
+
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# استفاده از __name__ یک روش بهتر برای نام‌گذاری logger است.
+logger = logging.getLogger(__name__) 
 
 def num_tokens_from_string(string: str, encoding_name: str = "cl100k_base") -> int:
     """محاسبه تعداد توکن‌های متن"""
     encoding = tiktoken.get_encoding(encoding_name)
     return len(encoding.encode(string))
 
-
 class AdvancedSummarizer:
     def __init__(self):
         self.llm = None
         self.initialize_llm()
-    
+
     def initialize_llm(self):
         """Initialize the language model"""
         api_key = os.environ.get("COHERE_API_KEY")
@@ -32,20 +33,27 @@ class AdvancedSummarizer:
             raise ValueError("⚠️ COHERE_API_KEY تنظیم نشده است (در Hugging Face Secrets اضافه کنید).")
 
         self.llm = ChatCohere(
-            model="command-a-03-2025",
-            temperature=0.1,
-            max_tokens=4000
-        )
+    cohere_api_key=os.environ["COHERE_API_KEY"],
+    model="command-a-03-2025",
+    temperature=0.1,
+    max_tokens=5000,
+)
 
-    def smart_text_split(self, text: str, max_tokens: int = 3500) -> List[Document]:
-        """تقسیم هوشمندانه متن با در نظر گرفتن محدودیت توکن"""
+
+    def smart_text_split(self, text: str) -> List[Document]:
+        """
+        تقسیم هوشمندانه متن با در نظر گرفتن محدودیت توکن برای استفاده حداکثری 
+        از پنجره زمینه (Command-A).
+        """
+        # 💡 بهبود: افزایش chunk_size تا 35000 توکن. 
+        # این مقدار بسیار بزرگتر است و از پنجره زمینه مدل 128k بهتر استفاده می‌کند.
         splitter = RecursiveCharacterTextSplitter(
-            chunk_size=900,
-            chunk_overlap=200,
-            length_function=num_tokens_from_string,
-            separators=["\n\n", "\n", " ", ""]
-        )
-        
+    chunk_size=1500,
+    chunk_overlap=200,
+    length_function=num_tokens_from_string,
+    separators=["\n\n", "\n", " ", ""]
+)
+
         return [Document(page_content=chunk) for chunk in splitter.split_text(text)]
 
     def summarize_large_text(self, text: str, language: str = "persian") -> str:
@@ -54,20 +62,20 @@ class AdvancedSummarizer:
             if not text or not text.strip():
                 return "❌ هیچ متنی برای خلاصه‌سازی وجود ندارد."
             
-            # بررسی حجم متن
             total_tokens = num_tokens_from_string(text)
             logger.info(f"تعداد کل توکن‌ها: {total_tokens}")
             
-            if total_tokens > 10000:  # اگر متن خیلی بزرگ است
-                return "⚠️ متن بسیار بزرگ است. لطفاً متن کوتاه‌تری انتخاب کنید (حداکثر 8000 کلمه)."
+            # 💡 بهبود: افزایش محدودیت ورودی به 40,000 توکن
+            if total_tokens > 40000:  
+                return "⚠️ متن بسیار بزرگ است. لطفاً متن کوتاه‌تری انتخاب کنید (حداکثر 30,000 توکن)."
             
             # تقسیم متن
             docs = self.smart_text_split(text)
             logger.info(f"تعداد بخش‌ها: {len(docs)}")
             
             if len(docs) == 1:
-                # اگر متن در یک بخش جا می‌شود
-                return self.summarize_directly(text, language)
+                # اگر متن در یک بخش جا می‌شود، مستقیم خلاصه کنید
+                return self.summarize_directly(docs[0].page_content, language)
             else:
                 # برای متن‌های بزرگ‌تر از map_reduce استفاده کنید
                 return self.summarize_map_reduce(docs, language)
@@ -115,10 +123,8 @@ class AdvancedSummarizer:
         
         return result["output_text"]
 
-
 # نمونه اصلی
 summarizer = AdvancedSummarizer()
-
 def summarize_text(text: str, language: str = "persian") -> str:
     """تابع wrapper برای سازگاری"""
     return summarizer.summarize_large_text(text, language)
