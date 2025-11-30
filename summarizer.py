@@ -2,8 +2,8 @@ from typing import List
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.documents import Document
 from langchain_cohere import ChatCohere
-from langchain_classic.chains.summarize import load_summarize_chain
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain.chains.summarize import load_summarize_chain
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 from dotenv import load_dotenv
 import os
 import logging
@@ -45,9 +45,11 @@ class AdvancedSummarizer:
         تقسیم هوشمندانه متن با در نظر گرفتن محدودیت توکن برای استفاده حداکثری 
         از پنجره زمینه (Command-A).
         """
+        # 💡 بهبود: افزایش chunk_size تا 35000 توکن. 
+        # این مقدار بسیار بزرگتر است و از پنجره زمینه مدل 128k بهتر استفاده می‌کند.
         splitter = RecursiveCharacterTextSplitter(
     chunk_size=2000,
-    chunk_overlap=400,
+    chunk_overlap=350,
     length_function=num_tokens_from_string,
     separators=["\n\n", "\n", " ", ""]
 )
@@ -64,8 +66,8 @@ class AdvancedSummarizer:
             logger.info(f"تعداد کل توکن‌ها: {total_tokens}")
             
             # 💡 بهبود: افزایش محدودیت ورودی به 40,000 توکن
-            if total_tokens > 70000:  
-                return "⚠️ متن بسیار بزرگ است. لطفاً متن کوتاه‌تری انتخاب کنید (حداکثر 70,000 توکن)."
+            if total_tokens > 40000:  
+                return "⚠️ متن بسیار بزرگ است. لطفاً متن کوتاه‌تری انتخاب کنید (حداکثر 30,000 توکن)."
             
             # تقسیم متن
             docs = self.smart_text_split(text)
