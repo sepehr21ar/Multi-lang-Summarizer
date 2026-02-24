@@ -1,6 +1,6 @@
 import gradio as gr
 from summarizer import summarize_text
-from file_utils import extract_text_from_file # 💡 اطمینان از وارد کردن صحیح 'utils'
+from file_utils import TextExtractionError, extract_text_from_file # 💡 اطمینان از وارد کردن صحیح 'utils'
 import os
 import time
 
@@ -42,7 +42,10 @@ def process_input(file_path, text_input, language_display, progress=gr.Progress(
 
         file_name = os.path.basename(file_path)
 
-        extracted_text = extract_text_from_file(file_bytes, file_name)
+        try:
+            extracted_text = extract_text_from_file(file_bytes, file_name)
+        except TextExtractionError as exc:
+            return f"⚠️ {exc}", ""
 
     elif text_input and text_input.strip():
         extracted_text = text_input.strip()

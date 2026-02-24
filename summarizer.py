@@ -1,130 +1,140 @@
-from typing import List
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.documents import Document
-from langchain_cohere import ChatCohere
-from langchain.chains.summarize import load_summarize_chain
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from dotenv import load_dotenv
-import os
 import logging
+from typing import List
+
 import tiktoken
-load_dotenv()
-print("API:", os.environ.get("COHERE_API_KEY"))
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_cohere import ChatCohere
+from langchain_core.documents import Document
+from langchain_core.prompts import ChatPromptTemplate
+
+from config import Settings
+
+logger = logging.getLogger(__name__)
+
+_STYLE_RULES = {
+    "concise": "Keep it very short and direct in 3-5 sentences.",
+    "balanced": "Cover the key points and the main conclusion clearly.",
+    "bullet_points": "Return the summary as clear bullet points."
+}
 
 
-logging.basicConfig(level=logging.INFO)
-# استفاده از __name__ یک روش بهتر برای نام‌گذاری logger است.
-logger = logging.getLogger(__name__) 
+class SummarizationService:
+    def __init__(self, settings: Settings):
+        self.settings = settings
+        self._llm: ChatCohere | None = None
+        self._encoder = tiktoken.get_encoding("cl100k_base")
 
-def num_tokens_from_string(string: str, encoding_name: str = "cl100k_base") -> int:
-    """محاسبه تعداد توکن‌های متن"""
-    encoding = tiktoken.get_encoding(encoding_name)
-    return len(encoding.encode(string))
+    def ready(self) -> bool:
+        return bool(self.settings.cohere_api_key)
 
-class AdvancedSummarizer:
-    def __init__(self):
-        self.llm = None
-        self.initialize_llm()
+    def _get_llm(self) -> ChatCohere:
+        if not self.settings.cohere_api_key:
+            raise RuntimeError("COHERE_API_KEY is not configured.")
 
-    def initialize_llm(self):
-        """Initialize the language model"""
-        api_key = os.environ.get("COHERE_API_KEY")
-        if not api_key:
-            raise ValueError("⚠️ COHERE_API_KEY تنظیم نشده است (در Hugging Face Secrets اضافه کنید).")
+        if self._llm is None:
+            self._llm = ChatCohere(
+                cohere_api_key=self.settings.cohere_api_key,
+                model=self.settings.cohere_model,
+                temperature=self.settings.cohere_temperature,
+                max_tokens=self.settings.cohere_max_tokens,
+            )
+        return self._llm
 
-        self.llm = ChatCohere(
-    cohere_api_key=os.environ["COHERE_API_KEY"],
-    model="command-a-03-2025",
-    temperature=0.1,
-    max_tokens=5000,
-)
+    def _token_count(self, text: str) -> int:
+        return len(self._encoder.encode(text))
 
-
-    def smart_text_split(self, text: str) -> List[Document]:
-        """
-        تقسیم هوشمندانه متن با در نظر گرفتن محدودیت توکن برای استفاده حداکثری 
-        از پنجره زمینه (Command-A).
-        """
-        # 💡 بهبود: افزایش chunk_size تا 35000 توکن. 
-        # این مقدار بسیار بزرگتر است و از پنجره زمینه مدل 128k بهتر استفاده می‌کند.
+    def _split(self, text: str) -> List[Document]:
         splitter = RecursiveCharacterTextSplitter(
-    chunk_size=2000,
-    chunk_overlap=350,
-    length_function=num_tokens_from_string,
-    separators=["\n\n", "\n", " ", ""]
-)
-
+            chunk_size=2200,
+            chunk_overlap=320,
+            length_function=self._token_count,
+            separators=["\n\n", "\n", " ", ""],
+        )
         return [Document(page_content=chunk) for chunk in splitter.split_text(text)]
 
-    def summarize_large_text(self, text: str, language: str = "persian") -> str:
-        """خلاصه‌سازی متن‌های بزرگ با استراتژی بهبود یافته"""
-        try:
-            if not text or not text.strip():
-                return "❌ هیچ متنی برای خلاصه‌سازی وجود ندارد."
-            
-            total_tokens = num_tokens_from_string(text)
-            logger.info(f"تعداد کل توکن‌ها: {total_tokens}")
-            
-            # 💡 بهبود: افزایش محدودیت ورودی به 40,000 توکن
-            if total_tokens > 40000:  
-                return "⚠️ متن بسیار بزرگ است. لطفاً متن کوتاه‌تری انتخاب کنید (حداکثر 30,000 توکن)."
-            
-            # تقسیم متن
-            docs = self.smart_text_split(text)
-            logger.info(f"تعداد بخش‌ها: {len(docs)}")
-            
-            if len(docs) == 1:
-                # اگر متن در یک بخش جا می‌شود، مستقیم خلاصه کنید
-                return self.summarize_directly(docs[0].page_content, language)
-            else:
-                # برای متن‌های بزرگ‌تر از map_reduce استفاده کنید
-                return self.summarize_map_reduce(docs, language)
-                
-        except Exception as e:
-            logger.error(f"خطا در خلاصه‌سازی: {str(e)}")
-            return f"⚠️ خطا در پردازش: {str(e)}"
+    def _summarize_chunk(self, text: str, language: str, style: str, chunked: bool = False) -> str:
+        llm = self._get_llm()
+        context_rule = "This is one part of a larger text." if chunked else ""
+        style_rule = _STYLE_RULES.get(style, _STYLE_RULES["balanced"])
 
-    def summarize_directly(self, text: str, language: str) -> str:
-        """خلاصه‌سازی مستقیم برای متن‌های کوچک"""
         prompt = ChatPromptTemplate.from_template(
-            "متن زیر را به زبان {language} خلاصه کنید. خلاصه باید شامل نکات کلیدی، "
-            "ایده‌های اصلی و نتیجه‌گیری باشد:\n\n{text}"
-        )
-        
-        chain = prompt | self.llm
-        result = chain.invoke({"text": text, "language": language})
-        return result.content
+            """
+Summarize the following text in {language}.
+{context_rule}
+Style requirement: {style_rule}
+Preserve critical names, numbers, and claims.
 
-    def summarize_map_reduce(self, docs: List[Document], language: str) -> str:
-        """خلاصه‌سازی با الگوی map-reduce برای متن‌های بزرگ"""
-        map_prompt_template = ChatPromptTemplate.from_template(
-            "بخش زیر از یک متن بزرگ را به زبان {language} خلاصه کنید. "
-            "روی نکات کلیدی و اطلاعات مهم تمرکز کنید:\n\n{text}"
+Text:
+{text}
+""".strip()
         )
 
-        combine_prompt_template = ChatPromptTemplate.from_template(
-            "خلاصه‌های زیر از بخش‌های مختلف یک متن هستند. آن‌ها را به یک خلاصه منسجم "
-            "و جامع به زبان {language} ترکیب کنید. ساختار منطقی داشته باشد و "
-            "همه نکات مهم را پوشش دهد:\n\n{text}"
+        chain = prompt | llm
+        result = chain.invoke(
+            {
+                "text": text,
+                "language": language,
+                "style_rule": style_rule,
+                "context_rule": context_rule,
+            }
         )
+        return result.content.strip()
 
-        chain = load_summarize_chain(
-            self.llm,
-            chain_type="map_reduce",
-            map_prompt=map_prompt_template,
-            combine_prompt=combine_prompt_template,
-            verbose=True
+    def summarize_text(self, text: str, language: str = "english", style: str = "balanced") -> str:
+        if not text or not text.strip():
+            raise ValueError("Input text is empty.")
+
+        text = text.strip()
+        docs = self._split(text)
+
+        if len(docs) == 1:
+            return self._summarize_chunk(docs[0].page_content, language, style, chunked=False)
+
+        partials = [self._summarize_chunk(doc.page_content, language, style, chunked=True) for doc in docs]
+
+        combined = "\n\n".join(partials)
+        rounds = 0
+        while self._token_count(combined) > 3500 and rounds < 3:
+            sub_docs = self._split(combined)
+            partials = [self._summarize_chunk(doc.page_content, language, style, chunked=True) for doc in sub_docs]
+            combined = "\n\n".join(partials)
+            rounds += 1
+
+        return self._summarize_chunk(combined, language, style, chunked=False)
+
+    def translate_text(self, text: str, target_language: str) -> str:
+        if not text or not text.strip():
+            raise ValueError("Input text is empty.")
+
+        llm = self._get_llm()
+        prompt = ChatPromptTemplate.from_template(
+            """
+Translate the following text into {target_language}.
+Keep meaning and named entities accurate. Do not summarize.
+
+Text:
+{text}
+""".strip()
         )
+        chain = prompt | llm
+        result = chain.invoke({"text": text, "target_language": target_language})
+        return result.content.strip()
 
-        result = chain.invoke({
-            "input_documents": docs, 
-            "language": language
-        })
-        
-        return result["output_text"]
 
-# نمونه اصلی
-summarizer = AdvancedSummarizer()
-def summarize_text(text: str, language: str = "persian") -> str:
-    """تابع wrapper برای سازگاری"""
-    return summarizer.summarize_large_text(text, language)
+__all__ = ["SummarizationService"]
+
+
+_default_service: SummarizationService | None = None
+
+
+def _get_default_service() -> SummarizationService:
+    global _default_service
+    if _default_service is None:
+        from config import get_settings
+
+        _default_service = SummarizationService(get_settings())
+    return _default_service
+
+
+def summarize_text(text: str, language: str = "english", style: str = "balanced") -> str:
+    return _get_default_service().summarize_text(text, language, style)

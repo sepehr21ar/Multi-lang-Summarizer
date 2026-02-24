@@ -4,3 +4,4 @@ test_document.txt
 .gradio
 .vscode
 __pycache__
+whisper\*

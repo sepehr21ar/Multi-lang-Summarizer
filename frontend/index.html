@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Multi-lang Summarizer</title>
+  <style>
+    :root {
+      --bg: #f3f8ff;
+      --surface: #ffffff;
+      --text: #0f2640;
+      --muted: #4f6b85;
+      --primary: #0ea5a0;
+      --primary-dark: #0b8b87;
+      --secondary: #1d4ed8;
+      --accent: #f59e0b;
+      --border: #cfe0ee;
+      --danger: #b91c1c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 12% 10%, #ffe8bf 0%, transparent 30%),
+        radial-gradient(circle at 88% 12%, #c9f5ef 0%, transparent 35%),
+        radial-gradient(circle at 50% 100%, #d8e7ff 0%, transparent 45%),
+        var(--bg);
+    }
+    .loading-wrap {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(243, 248, 255, 0.95);
+      backdrop-filter: blur(4px);
+      border-bottom: 1px solid var(--border);
+      padding: 8px 16px;
+      display: none;
+    }
+    .loading-wrap.active {
+      display: block;
+    }
+    .loading-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .loading-track {
+      width: 100%;
+      height: 8px;
+      border-radius: 999px;
+      background: #e8f1f8;
+      overflow: hidden;
+    }
+    .loading-fill {
+      height: 100%;
+      width: 30%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--accent), var(--primary), var(--secondary));
+      animation: slide 1.2s infinite ease-in-out;
+    }
+    @keyframes slide {
+      0% { transform: translateX(-120%); }
+      100% { transform: translateX(380%); }
+    }
+    .wrap { max-width: 980px; margin: 24px auto; padding: 0 16px; }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 8px 20px rgba(17, 34, 51, 0.06);
+    }
+    h1 { margin: 0 0 6px; }
+    p { color: var(--muted); }
+    .grid {
+      display: grid;
+      gap: 16px;
+      grid-template-columns: 1fr;
+    }
+    @media (min-width: 900px) { .grid { grid-template-columns: 1fr 1fr; } }
+    textarea, input, select, button {
+      width: 100%;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      padding: 10px;
+      font-size: 14px;
+      background: #fff;
+    }
+    textarea { min-height: 140px; resize: vertical; }
+    label { display: block; margin: 10px 0 6px; font-weight: 600; }
+    button {
+      border: none;
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      color: #fff;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 12px;
+    }
+    button:hover { filter: brightness(0.96); }
+    button:disabled { opacity: 0.65; cursor: wait; }
+    .result { white-space: pre-wrap; background: #f9fcff; min-height: 220px; }
+    .error { color: var(--danger); margin-top: 8px; }
+    .tabs { display: flex; gap: 8px; margin: 12px 0 0; flex-wrap: wrap; }
+    .tab-btn {
+      width: auto;
+      background: #fff;
+      border: 1px solid var(--border);
+      color: var(--text);
+      margin: 0;
+      padding: 8px 12px;
+    }
+    .tab-btn.active { background: #d9f2ef; border-color: #9cd7cf; }
+    .panel { display: none; }
+    .panel.active { display: block; }
+  </style>
+</head>
+<body>
+  <div id="loadingWrap" class="loading-wrap">
+    <div class="loading-meta">
+      <span id="loadingLabel">Processing...</span>
+      <span>Please wait</span>
+    </div>
+    <div class="loading-track">
+      <div class="loading-fill"></div>
+    </div>
+  </div>
+  <div class="wrap">
+    <div class="card">
+      <h1>Multi-lang Summarizer</h1>
+      <p>Production API with text/file summarization and a separate voice-to-text translator.</p>
+
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="text">Text</button>
+        <button class="tab-btn" data-tab="file">File</button>
+        <button class="tab-btn" data-tab="audio">Audio</button>
+      </div>
+
+      <div class="grid">
+        <div>
+          <div id="panel-text" class="panel active">
+            <label for="textInput">Text</label>
+            <textarea id="textInput" placeholder="Paste your text..."></textarea>
+            <button id="submitText">Summarize Text</button>
+          </div>
+
+          <div id="panel-file" class="panel">
+            <label for="fileInput">Upload File</label>
+            <input id="fileInput" type="file" accept=".pdf,.docx,.txt,.md,.csv" />
+            <button id="submitFile">Summarize File</button>
+          </div>
+
+          <div id="panel-audio" class="panel">
+            <label for="audioInput">Upload Audio</label>
+            <input id="audioInput" type="file" accept=".wav,.mp3,.m4a,.flac,.ogg" />
+            <label for="sourceLanguage">Source language (optional: en or fa)</label>
+            <input id="sourceLanguage" type="text" placeholder="defaults to selected output language" />
+            <label for="translateOutput">
+              <input id="translateOutput" type="checkbox" style="width:auto; margin-right:8px;" />
+              Translate transcript to output language
+            </label>
+            <button id="submitAudio">Transcribe Voice</button>
+          </div>
+
+          <label for="language">Output Language</label>
+          <select id="language">
+            <option value="english">English</option>
+            <option value="persian">Persian</option>
+            <option value="french">French</option>
+            <option value="german">German</option>
+            <option value="spanish">Spanish</option>
+            <option value="arabic">Arabic</option>
+          </select>
+
+          <label for="style">Summary Style</label>
+          <select id="style">
+            <option value="balanced">Balanced</option>
+            <option value="concise">Concise</option>
+            <option value="bullet_points">Bullet points</option>
+          </select>
+
+          <div id="error" class="error"></div>
+        </div>
+
+        <div>
+          <label>Output Text</label>
+          <textarea id="summaryOutput" class="result" readonly></textarea>
+
+          <label>Transcript / Source Text</label>
+          <textarea id="rawOutput" class="result" readonly></textarea>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const tabButtons = document.querySelectorAll('.tab-btn');
+    const panels = {
+      text: document.getElementById('panel-text'),
+      file: document.getElementById('panel-file'),
+      audio: document.getElementById('panel-audio')
+    };
+    const styleSelect = document.getElementById('style');
+    const loadingWrap = document.getElementById('loadingWrap');
+    const loadingLabel = document.getElementById('loadingLabel');
+    const actionButtons = [
+      document.getElementById('submitText'),
+      document.getElementById('submitFile'),
+      document.getElementById('submitAudio')
+    ];
+
+    tabButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        tabButtons.forEach(x => x.classList.remove('active'));
+        Object.values(panels).forEach(x => x.classList.remove('active'));
+        btn.classList.add('active');
+        panels[btn.dataset.tab].classList.add('active');
+        styleSelect.disabled = btn.dataset.tab === 'audio';
+        clearOutputs();
+      });
+    });
+
+    function clearOutputs() {
+      document.getElementById('error').textContent = '';
+      document.getElementById('summaryOutput').value = '';
+      document.getElementById('rawOutput').value = '';
+    }
+
+    function setError(message) {
+      document.getElementById('error').textContent = message;
+    }
+
+    function setLoading(active, label) {
+      loadingWrap.classList.toggle('active', active);
+      loadingLabel.textContent = label || 'Processing...';
+      actionButtons.forEach(btn => btn.disabled = active);
+    }
+
+    async function parseResponse(response) {
+      const contentType = response.headers.get('content-type') || '';
+      let data = null;
+
+      if (contentType.includes('application/json')) {
+        try {
+          data = await response.json();
+        } catch (_) {
+          data = null;
+        }
+      } else {
+        const text = await response.text();
+        data = text ? { detail: text } : null;
+      }
+
+      if (!response.ok) {
+        throw new Error((data && (data.detail || data.message)) || `Request failed (${response.status})`);
+      }
+
+      if (!data) {
+        throw new Error('Server returned an empty response.');
+      }
+
+      return data;
+    }
+
+    document.getElementById('submitText').addEventListener('click', async () => {
+      clearOutputs();
+      setLoading(true, 'Summarizing text...');
+      try {
+        const payload = {
+          text: document.getElementById('textInput').value,
+          language: document.getElementById('language').value,
+          style: document.getElementById('style').value
+        };
+        const resp = await fetch('/v1/summarize/text', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await parseResponse(resp);
+        document.getElementById('summaryOutput').value = data.summary;
+        document.getElementById('rawOutput').value = payload.text;
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    });
+
+    document.getElementById('submitFile').addEventListener('click', async () => {
+      clearOutputs();
+      setLoading(true, 'Reading file and summarizing...');
+      try {
+        const file = document.getElementById('fileInput').files[0];
+        if (!file) throw new Error('Please select a file.');
+
+        const form = new FormData();
+        form.append('file', file);
+        form.append('language', document.getElementById('language').value);
+        form.append('style', document.getElementById('style').value);
+
+        const resp = await fetch('/v1/summarize/file', { method: 'POST', body: form });
+        const data = await parseResponse(resp);
+
+        document.getElementById('summaryOutput').value = data.summary;
+        document.getElementById('rawOutput').value = 'File processed successfully.';
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    });
+
+    document.getElementById('submitAudio').addEventListener('click', async () => {
+      clearOutputs();
+      setLoading(true, 'Transcribing audio...');
+      try {
+        const file = document.getElementById('audioInput').files[0];
+        if (!file) throw new Error('Please select an audio file.');
+
+        const form = new FormData();
+        form.append('file', file);
+        form.append('language', document.getElementById('language').value);
+        form.append('source_language', document.getElementById('sourceLanguage').value);
+        form.append('return_timestamps', 'false');
+        form.append('translate_output', document.getElementById('translateOutput').checked ? 'true' : 'false');
+
+        const resp = await fetch('/v1/audio/transcribe', { method: 'POST', body: form });
+        const data = await parseResponse(resp);
+
+        document.getElementById('summaryOutput').value = data.text_in_output_language || data.transcript;
+        document.getElementById('rawOutput').value = data.transcript;
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    });
+  </script>
+</body>
+</html>

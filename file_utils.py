@@ -1,67 +1,71 @@
-from langchain_community.document_loaders import TextLoader, Docx2txtLoader, CSVLoader, PyPDFLoader
-import tempfile
-import os
 import logging
+import os
+import tempfile
 
-# 💡 حذف وابستگی‌های OCR: pytesseract و pdf2image دیگر لازم نیستند.
+from langchain_community.document_loaders import CSVLoader, Docx2txtLoader, PyPDFLoader, TextLoader
 
-logging.basicConfig(level=logging.INFO)
-# استفاده از __name__ یک روش بهتر برای نام‌گذاری logger است.
-logger = logging.getLogger(__name__) 
+logger = logging.getLogger(__name__)
+
+
+class TextExtractionError(Exception):
+    pass
+
+
+SUPPORTED_EXTENSIONS = {".pdf", ".csv", ".docx", ".txt", ".md"}
+
+
+def _decode_text(file_bytes: bytes) -> str:
+    for encoding in ["utf-8", "utf-8-sig", "cp1252", "latin-1"]:
+        try:
+            return file_bytes.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return file_bytes.decode("utf-8", errors="ignore")
+
 
 def extract_text_from_file(file_bytes: bytes, file_name: str) -> str:
-    """Extract text from a file using LangChain loaders where possible."""
     if not file_bytes:
-        return "⚠️ فایل خالی است."
+        raise TextExtractionError("Uploaded file is empty.")
 
-    fname = file_name.lower()
-    suffix = "." + fname.split(".")[-1] if "." in fname else ""
+    suffix = os.path.splitext(file_name.lower())[1]
+    if suffix and suffix not in SUPPORTED_EXTENSIONS:
+        raise TextExtractionError(f"Unsupported file type: {suffix}")
+
+    if not suffix:
+        return _decode_text(file_bytes)
 
     loader_map = {
-        ".pdf": lambda path: PyPDFLoader(path),
-        ".csv": lambda path: CSVLoader(path, encoding="utf-8"),
-        ".docx": lambda path: Docx2txtLoader(path),
-        ".txt": lambda path: TextLoader(path, encoding="utf-8"),
-        ".md": lambda path: TextLoader(path, encoding="utf-8"),
+        ".pdf": lambda p: PyPDFLoader(p),
+        ".csv": lambda p: CSVLoader(p, encoding="utf-8"),
+        ".docx": lambda p: Docx2txtLoader(p),
+        ".txt": lambda p: TextLoader(p, encoding="utf-8"),
+        ".md": lambda p: TextLoader(p, encoding="utf-8"),
     }
 
-    if suffix in loader_map:
-        # برای لودرها، فایل موقت ایجاد می‌کنیم.
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            tmp.write(file_bytes)
-            tmp_path = tmp.name
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp.write(file_bytes)
+        tmp_path = tmp.name
 
-        try:
-            loader_fn = loader_map[suffix]
-            loader = loader_fn(tmp_path)
-            docs = loader.load()
-            
-            # 💡 بهبود: حذف کامل بخش OCR برای PDF
-            if not docs:
-                if suffix == ".pdf":
-                     # اگر PyPDFLoader متنی پیدا نکرد، فرض می‌کنیم PDF اسکن شده است.
-                     return "⚠️ فایل PDF متنی نیست یا خالی است. پشتیبانی از PDF اسکن شده (OCR) غیرفعال است."
-                else:
-                    return "⚠️ هیچ متنی پیدا نشد."
-                    
-            contents = [d.page_content.strip() for d in docs if d.page_content.strip()]
-            return "\n\n".join(contents)
-            
-        except Exception as e:
-            logger.error(f"خطا در پردازش فایل {suffix}: {str(e)}")
-            return f"⚠️ خطا در پردازش فایل: {str(e)}"
-        finally:
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
-
-    # fallback برای فایل‌های دیگر
     try:
-        encodings = ['utf-8', 'utf-8-sig', 'latin-1', 'cp1256']
-        for encoding in encodings:
-            try:
-                return file_bytes.decode(encoding)
-            except UnicodeDecodeError:
-                continue
-        return file_bytes.decode('utf-8', errors='ignore')
-    except Exception as e:
-        return f"خطا در رمزگشایی فایل: {str(e)}"
+        loader = loader_map[suffix](tmp_path)
+        docs = loader.load()
+        if not docs:
+            if suffix == ".pdf":
+                raise TextExtractionError(
+                    "No extractable text found in PDF. It may be scanned and requires OCR support."
+                )
+            raise TextExtractionError("No text could be extracted from the file.")
+
+        chunks = [doc.page_content.strip() for doc in docs if doc.page_content and doc.page_content.strip()]
+        content = "\n\n".join(chunks).strip()
+        if not content:
+            raise TextExtractionError("File was parsed but no readable text content was found.")
+        return content
+    except TextExtractionError:
+        raise
+    except Exception as exc:
+        logger.exception("File extraction failed for %s", suffix)
+        raise TextExtractionError(f"Failed to parse file: {exc}") from exc
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
